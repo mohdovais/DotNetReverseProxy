@@ -1,4 +1,4 @@
-namespace ReverseProxy;
+namespace ProxyServer;
 
 public class Constants
 {

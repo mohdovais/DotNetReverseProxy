@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace ReverseProxy.Middlewares;
+namespace ProxyServer;
 
 public class ReverseProxyMiddleware
 {
@@ -14,20 +14,19 @@ public class ReverseProxyMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, HttpClient httpClient, IOptions<ReverseProxyConfig> settings)
+    public async Task InvokeAsync(HttpContext context, HttpClient httpClient, IOptions<ServerConfig> settings)
     {
-        var proxySettings = settings.Value.Mappings;
-        var targetUri = GetTargetUri(context.Request, proxySettings);
+        var proxySettings = settings.Value.ReverseProxies;
+        var mappingAndTargetUri = GetMappingAndTargetUri(context.Request, proxySettings);
 
-        if (targetUri != null)
+        if (mappingAndTargetUri != null)
         {
+            var (mapping, targetUri) = mappingAndTargetUri ?? default;
             var requestMessage = CreateTargetRequestMessage(context.Request, targetUri);
             var sourceResponse = context.Response;
 
             using var targetResponse = await httpClient.SendAsync(
                 requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-
-            sourceResponse.StatusCode = (int)targetResponse.StatusCode;
 
             foreach (var header in targetResponse.Headers)
             {
@@ -38,7 +37,24 @@ public class ReverseProxyMiddleware
             {
                 sourceResponse.Headers[header.Key] = header.Value.ToArray();
             }
-            
+
+            if (mapping.ProxySetHeader != null)
+            {
+                foreach (var keyValuePair in mapping.ProxySetHeader)
+                {
+                    if (string.IsNullOrEmpty(keyValuePair.Value))
+                    {
+                        sourceResponse.Headers.Remove(keyValuePair.Key);
+                    }
+                    else
+                    {
+                        sourceResponse.Headers[keyValuePair.Key] = new string[] { keyValuePair.Value };
+                    }
+
+                }
+            }
+
+            sourceResponse.StatusCode = (int)targetResponse.StatusCode;
             sourceResponse.Headers.Remove(Constants.TRANSFER_ENCODING);
 
             await targetResponse.Content.CopyToAsync(sourceResponse.Body);
@@ -90,13 +106,13 @@ public class ReverseProxyMiddleware
 
     }
 
-    private Uri? GetTargetUri(HttpRequest request, Mapping[] mappings)
+    private static (ReverseProxySetting mapping, Uri targetUri)? GetMappingAndTargetUri(HttpRequest request, ReverseProxySetting[] mappings)
     {
         foreach (var mapping in mappings)
         {
             if (request.Path.StartsWithSegments(mapping.Location, out var remainingPath))
             {
-                return new Uri(mapping.ProxyPass + remainingPath + request.QueryString.Value);
+                return (mapping, new Uri(mapping.ProxyPass + remainingPath + request.QueryString.Value));
             }
         }
         return null;
