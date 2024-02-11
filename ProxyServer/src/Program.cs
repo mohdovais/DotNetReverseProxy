@@ -13,11 +13,6 @@ var settings = builder.Configuration
 
 if (settings != null)
 {
-    if (settings.ReverseProxies.Length > 0)
-    {
-        app.UseMiddleware<ReverseProxyMiddleware>();
-    }
-
     Array.ForEach(settings.StaticContents, setting =>
     {
         var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(setting.Root);
@@ -33,6 +28,11 @@ if (settings != null)
             FileProvider = fileProvider,
         });
     });
+
+    if (settings.ReverseProxies.Length > 0)
+    {
+        app.UseMiddleware<ReverseProxyMiddleware>();
+    }
 }
 
 app.Run();

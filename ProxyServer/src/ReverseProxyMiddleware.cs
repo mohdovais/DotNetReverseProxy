@@ -8,6 +8,8 @@ public class ReverseProxyMiddleware
     private static readonly string[] _httpMethodsWithoutBody = [
         Constants.GET, Constants.HEAD, Constants.DELETE, Constants.DELETE
     ];
+    private const string DOMAIN = "domain";
+    private const string D = "d";
 
     public ReverseProxyMiddleware(RequestDelegate next)
     {
@@ -23,39 +25,13 @@ public class ReverseProxyMiddleware
         {
             var (mapping, targetUri) = mappingAndTargetUri ?? default;
             var requestMessage = CreateTargetRequestMessage(context.Request, targetUri);
-            var sourceResponse = context.Response;
 
             using var targetResponse = await httpClient.SendAsync(
                 requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
 
-            foreach (var header in targetResponse.Headers)
-            {
-                sourceResponse.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            foreach (var header in targetResponse.Content.Headers)
-            {
-                sourceResponse.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            if (mapping.ProxySetHeader != null)
-            {
-                foreach (var keyValuePair in mapping.ProxySetHeader)
-                {
-                    if (string.IsNullOrEmpty(keyValuePair.Value))
-                    {
-                        sourceResponse.Headers.Remove(keyValuePair.Key);
-                    }
-                    else
-                    {
-                        sourceResponse.Headers[keyValuePair.Key] = new string[] { keyValuePair.Value };
-                    }
-
-                }
-            }
-
+            var sourceResponse = context.Response;
+            ApplyResponseHeaders(sourceResponse.Headers, targetResponse, mapping);
             sourceResponse.StatusCode = (int)targetResponse.StatusCode;
-            sourceResponse.Headers.Remove(Constants.TRANSFER_ENCODING);
 
             await targetResponse.Content.CopyToAsync(sourceResponse.Body);
 
@@ -65,7 +41,7 @@ public class ReverseProxyMiddleware
         await _next(context);
     }
 
-    private HttpRequestMessage CreateTargetRequestMessage(HttpRequest request, Uri targetUri)
+    private static HttpRequestMessage CreateTargetRequestMessage(HttpRequest request, Uri targetUri)
     {
         var message = new HttpRequestMessage(GetHttpMethod(request.Method), targetUri);
 
@@ -84,12 +60,14 @@ public class ReverseProxyMiddleware
         return message;
     }
 
-    private HttpMethod GetHttpMethod(string method)
+    private static HttpMethod GetHttpMethod(string method)
     {
         switch (method)
         {
             case Constants.DELETE:
                 return HttpMethod.Delete;
+            case Constants.GET:
+                return HttpMethod.Get;
             case Constants.HEAD:
                 return HttpMethod.Head;
             case Constants.OPTIONS:
@@ -101,7 +79,7 @@ public class ReverseProxyMiddleware
             case Constants.TRACE:
                 return HttpMethod.Trace;
             default:
-                return HttpMethod.Get;
+                return new HttpMethod(method);
         };
 
     }
@@ -116,5 +94,48 @@ public class ReverseProxyMiddleware
             }
         }
         return null;
+    }
+
+    private void ApplyResponseHeaders(IHeaderDictionary headers, HttpResponseMessage targetResponse,
+        ReverseProxySetting setting)
+    {
+        foreach (var header in targetResponse.Headers)
+        {
+            headers[header.Key] = header.Value.ToArray();
+        }
+
+        foreach (var header in targetResponse.Content.Headers)
+        {
+            headers[header.Key] = header.Value.ToArray();
+        }
+
+        if (setting.ProxySetHeader != null)
+        {
+            foreach (var keyValuePair in setting.ProxySetHeader)
+            {
+                if (string.IsNullOrEmpty(keyValuePair.Value))
+                {
+                    headers.Remove(keyValuePair.Key);
+                }
+                else
+                {
+                    headers[keyValuePair.Key] = new string[] { keyValuePair.Value };
+                }
+
+            }
+        }
+
+        if (headers.ContainsKey(Constants.COOKIE_NAME_LOCATION))
+        {
+            headers.Location = headers.Location.Select(location => location?.Replace(setting.ProxyPass, setting.Location)).ToArray();
+        }
+
+        if (headers.ContainsKey(Constants.COOKIE_NAME_SET_COOKIE))
+        {
+            headers.SetCookie = headers.SetCookie.Select(cookie => cookie?.Replace(DOMAIN, D)).ToArray();
+        }
+
+        headers.Remove(Constants.COOKIE_NAME_SERVER);
+        headers.Remove(Constants.COOKIE_NAME_TRANSFER_ENCODING);
     }
 }

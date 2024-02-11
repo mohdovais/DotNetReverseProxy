@@ -9,5 +9,9 @@ public class Constants
     public const string OPTIONS = "OPTIONS";
     public const string HEAD = " HEAD";
     public const string TRACE = "TRACE";
-    public const string TRANSFER_ENCODING = "transfer-encoding";
+
+    public const string COOKIE_NAME_TRANSFER_ENCODING = "Transfer-Encoding";
+    public const string COOKIE_NAME_SERVER = "Server";
+    public const string COOKIE_NAME_LOCATION = "Location";
+    public const string COOKIE_NAME_SET_COOKIE = "Set-Cookie";
 }
