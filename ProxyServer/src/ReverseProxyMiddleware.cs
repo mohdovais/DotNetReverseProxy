@@ -6,7 +6,10 @@ public class ReverseProxyMiddleware
 {
     private readonly RequestDelegate _next;
     private static readonly string[] _httpMethodsWithoutBody = [
-        Constants.GET, Constants.HEAD, Constants.DELETE, Constants.DELETE
+        Constants.HTTP_METHOD_GET,
+        Constants.HTTP_METHOD_HEAD,
+        Constants.HTTP_METHOD_DELETE,
+        Constants.HTTP_METHOD_DELETE
     ];
     private const string DOMAIN = "domain";
     private const string D = "d";
@@ -34,7 +37,7 @@ public class ReverseProxyMiddleware
             sourceResponse.StatusCode = (int)targetResponse.StatusCode;
 
             await targetResponse.Content.CopyToAsync(sourceResponse.Body);
-
+            targetResponse.Content = null;
             return;
         }
 
@@ -64,19 +67,19 @@ public class ReverseProxyMiddleware
     {
         switch (method)
         {
-            case Constants.DELETE:
+            case Constants.HTTP_METHOD_DELETE:
                 return HttpMethod.Delete;
-            case Constants.GET:
+            case Constants.HTTP_METHOD_GET:
                 return HttpMethod.Get;
-            case Constants.HEAD:
+            case Constants.HTTP_METHOD_HEAD:
                 return HttpMethod.Head;
-            case Constants.OPTIONS:
+            case Constants.HTTP_METHOD_OPTIONS:
                 return HttpMethod.Options;
-            case Constants.POST:
+            case Constants.HTTP_METHOD_POST:
                 return HttpMethod.Post;
-            case Constants.PUT:
+            case Constants.HTTP_METHOD_PUT:
                 return HttpMethod.Put;
-            case Constants.TRACE:
+            case Constants.HTTP_METHOD_TRACE:
                 return HttpMethod.Trace;
             default:
                 return new HttpMethod(method);
@@ -96,14 +99,30 @@ public class ReverseProxyMiddleware
         return null;
     }
 
-    private void ApplyResponseHeaders(IHeaderDictionary headers, HttpResponseMessage targetResponse,
-        ReverseProxySetting setting)
+    private static void ApplyResponseHeaders(
+        IHeaderDictionary headers,
+        HttpResponseMessage targetResponse,
+        ReverseProxySetting setting
+    )
     {
+        /*
+        * HttpResponseHeaders
+        * Accept-Ranges, Age, Cache-Control, Connection, Date, ETag,
+        * Location, Pragma, Proxy-Authenticate, Retry-After, Server,
+        * Trailer, Transfer-Encoding, Upgrade, Vary, Via, Warning,
+        * WWW-Authenticate
+        */
         foreach (var header in targetResponse.Headers)
         {
             headers[header.Key] = header.Value.ToArray();
         }
 
+        /*
+        * HttpContentHeaders
+        * Content-Disposition, Content-Encoding, Content-Language,
+        * Content-Length, Content-Location, Content-MD5, Content-Range,
+        * Content-Type, Expires, Last-Modified
+        */
         foreach (var header in targetResponse.Content.Headers)
         {
             headers[header.Key] = header.Value.ToArray();
@@ -127,15 +146,20 @@ public class ReverseProxyMiddleware
 
         if (headers.ContainsKey(Constants.COOKIE_NAME_LOCATION))
         {
-            headers.Location = headers.Location.Select(location => location?.Replace(setting.ProxyPass, setting.Location)).ToArray();
+            headers.Location = headers.Location
+                .Select(location => location?.Replace(setting.ProxyPass, setting.Location))
+                .ToArray();
         }
 
         if (headers.ContainsKey(Constants.COOKIE_NAME_SET_COOKIE))
         {
-            headers.SetCookie = headers.SetCookie.Select(cookie => cookie?.Replace(DOMAIN, D)).ToArray();
+            headers.SetCookie = headers.SetCookie
+                .Select(cookie => cookie?.Replace(DOMAIN, D))
+                .ToArray();
         }
 
-        headers.Remove(Constants.COOKIE_NAME_SERVER);
+        // Ignore Transfer-Encoding from target server
+        // This server will set its own
         headers.Remove(Constants.COOKIE_NAME_TRANSFER_ENCODING);
     }
 }
