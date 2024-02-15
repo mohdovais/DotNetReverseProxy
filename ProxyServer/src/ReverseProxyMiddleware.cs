@@ -4,32 +4,49 @@ namespace ProxyServer;
 
 public class ReverseProxyMiddleware
 {
-    private readonly RequestDelegate _next;
-    private static readonly string[] _httpMethodsWithoutBody = [
-        Constants.HTTP_METHOD_GET,
-        Constants.HTTP_METHOD_HEAD,
-        Constants.HTTP_METHOD_DELETE,
-        Constants.HTTP_METHOD_DELETE
-    ];
+    private const string HEADER_TRANSFER_ENCODING = "Transfer-Encoding";
+    private const string HEADER_LOCATION = "Location";
+    private const string HEADER_SET_COOKIE = "Set-Cookie";
+    private const string HTTP_METHOD_GET = "GET";
+    private const string HTTP_METHOD_POST = "POST";
+    private const string HTTP_METHOD_PUT = "PUT";
+    private const string HTTP_METHOD_DELETE = "DELETE";
+    private const string HTTP_METHOD_OPTIONS = "OPTIONS";
+    private const string HTTP_METHOD_HEAD = " HEAD";
+    private const string HTTP_METHOD_TRACE = "TRACE";
     private const string DOMAIN = "domain";
     private const string D = "d";
 
-    public ReverseProxyMiddleware(RequestDelegate next)
+    //@TODO verify again
+    private static readonly string[] _httpMethodsWithoutBody = [
+        HTTP_METHOD_GET,
+        HTTP_METHOD_HEAD,
+        HTTP_METHOD_DELETE,
+        HTTP_METHOD_OPTIONS
+    ];
+
+    //@TODO how to configure proxy and certificates
+    private static readonly HttpClient _httpClient = new HttpClient();
+
+    private readonly ReverseProxySetting[] _mappings;
+    private readonly RequestDelegate _next;
+
+    public ReverseProxyMiddleware(RequestDelegate next, IOptions<ReverseProxySetting[]> option)
     {
         _next = next;
+        _mappings = option.Value;
     }
 
-    public async Task InvokeAsync(HttpContext context, HttpClient httpClient, IOptions<ServerConfig> settings)
+    public async Task InvokeAsync(HttpContext context)
     {
-        var proxySettings = settings.Value.ReverseProxies;
-        var mappingAndTargetUri = GetMappingAndTargetUri(context.Request, proxySettings);
+        var mappingAndTargetUri = GetMappingAndTargetUri(context.Request);
 
         if (mappingAndTargetUri != null)
         {
             var (mapping, targetUri) = mappingAndTargetUri ?? default;
             var requestMessage = CreateTargetRequestMessage(context.Request, targetUri);
 
-            using var targetResponse = await httpClient.SendAsync(
+            using var targetResponse = await _httpClient.SendAsync(
                 requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
 
             var sourceResponse = context.Response;
@@ -67,19 +84,19 @@ public class ReverseProxyMiddleware
     {
         switch (method)
         {
-            case Constants.HTTP_METHOD_DELETE:
+            case HTTP_METHOD_DELETE:
                 return HttpMethod.Delete;
-            case Constants.HTTP_METHOD_GET:
+            case HTTP_METHOD_GET:
                 return HttpMethod.Get;
-            case Constants.HTTP_METHOD_HEAD:
+            case HTTP_METHOD_HEAD:
                 return HttpMethod.Head;
-            case Constants.HTTP_METHOD_OPTIONS:
+            case HTTP_METHOD_OPTIONS:
                 return HttpMethod.Options;
-            case Constants.HTTP_METHOD_POST:
+            case HTTP_METHOD_POST:
                 return HttpMethod.Post;
-            case Constants.HTTP_METHOD_PUT:
+            case HTTP_METHOD_PUT:
                 return HttpMethod.Put;
-            case Constants.HTTP_METHOD_TRACE:
+            case HTTP_METHOD_TRACE:
                 return HttpMethod.Trace;
             default:
                 return new HttpMethod(method);
@@ -87,9 +104,9 @@ public class ReverseProxyMiddleware
 
     }
 
-    private static (ReverseProxySetting mapping, Uri targetUri)? GetMappingAndTargetUri(HttpRequest request, ReverseProxySetting[] mappings)
+    private (ReverseProxySetting mapping, Uri targetUri)? GetMappingAndTargetUri(HttpRequest request)
     {
-        foreach (var mapping in mappings)
+        foreach (var mapping in _mappings)
         {
             if (request.Path.StartsWithSegments(mapping.Location, out var remainingPath))
             {
@@ -144,14 +161,14 @@ public class ReverseProxyMiddleware
             }
         }
 
-        if (headers.ContainsKey(Constants.COOKIE_NAME_LOCATION))
+        if (headers.ContainsKey(HEADER_LOCATION))
         {
             headers.Location = headers.Location
                 .Select(location => location?.Replace(setting.ProxyPass, setting.Location))
                 .ToArray();
         }
 
-        if (headers.ContainsKey(Constants.COOKIE_NAME_SET_COOKIE))
+        if (headers.ContainsKey(HEADER_SET_COOKIE))
         {
             headers.SetCookie = headers.SetCookie
                 .Select(cookie => cookie?.Replace(DOMAIN, D))
@@ -160,6 +177,15 @@ public class ReverseProxyMiddleware
 
         // Ignore Transfer-Encoding from target server
         // This server will set its own
-        headers.Remove(Constants.COOKIE_NAME_TRANSFER_ENCODING);
+        headers.Remove(HEADER_TRANSFER_ENCODING);
+    }
+}
+
+public static class ReverseProxyMiddlewareExtensions
+{
+    public static IApplicationBuilder UseReverseProxy(
+        this IApplicationBuilder builder, ReverseProxySetting[] mappings)
+    {
+        return builder.UseMiddleware<ReverseProxyMiddleware>(Options.Create(mappings));
     }
 }

@@ -2,7 +2,6 @@ using ProxyServer;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-builder.Services.AddHttpClient();
 builder.Services.Configure<ServerConfig>(builder.Configuration.GetSection(ServerConfig.Name));
 
 var app = builder.Build();
@@ -15,7 +14,9 @@ if (settings != null)
 {
     Array.ForEach(settings.StaticContents, setting =>
     {
-        var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(setting.Root);
+        var contentRoot = Path.Combine(builder.Environment.ContentRootPath, setting.Root);
+        var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(contentRoot);
+
         app.UseDefaultFiles(new DefaultFilesOptions()
         {
             RequestPath = setting.Location,
@@ -31,7 +32,7 @@ if (settings != null)
 
     if (settings.ReverseProxies.Length > 0)
     {
-        app.UseMiddleware<ReverseProxyMiddleware>();
+        app.UseReverseProxy(settings.ReverseProxies);
     }
 }
 
