@@ -3,21 +3,18 @@ namespace ProxyServer;
 public class ServerConfig
 {
     public const string Name = "ProxyServer";
-    public ReverseProxySetting[] ReverseProxies { get; set; } = Array.Empty<ReverseProxySetting>();
-    public StaticContentSetting[] StaticContents { get; set; } = Array.Empty<StaticContentSetting>();
+    public ServerConfigReverseProxy[] ReverseProxies { get; set; } = Array.Empty<ServerConfigReverseProxy>();
+    public ServerConfigStaticContent[] StaticContents { get; set; } = Array.Empty<ServerConfigStaticContent>();
 }
 
-public class ReverseProxySetting
+public class ServerConfigReverseProxy
 {
-    private string _location = string.Empty;
-    private string _proxyPass = string.Empty;
-
-    public string Location { get => _location; set => _location = value.TrimEnd('/'); }
-    public string ProxyPass { get => _proxyPass; set => _proxyPass = value.TrimEnd('/'); }
+    public string Location { get; set; } = string.Empty;
+    public string ProxyPass { get; set; } = string.Empty;
     public Dictionary<string, string>? ProxySetHeader { get; set; }
 }
 
-public class StaticContentSetting
+public class ServerConfigStaticContent
 {
     private string _location = string.Empty;
 

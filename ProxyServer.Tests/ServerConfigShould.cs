@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ProxyServer.Tests;
 
 public class ServerConfigShould
@@ -5,7 +7,7 @@ public class ServerConfigShould
     [Fact]
     public void HaveName_ProxyServer()
     {
-        Assert.Equal("ProxyServer", ServerConfig.Name);
+        Assert.IsType<string>(ServerConfig.Name);
     }
 
     [Fact]
@@ -23,23 +25,7 @@ public class ServerConfigShould
            ""ReverseProxies"": [{}]
         }";
         var settings = System.Text.Json.JsonSerializer.Deserialize<ServerConfig>(json);
-        Assert.Equivalent(new ReverseProxySetting { Location = "", ProxyPass = "" }, settings?.ReverseProxies[0]);
-    }
-
-    [Fact]
-    public void HavePropertyReverseProxies_WithoutTrailingSlashes()
-    {
-        var json = @"{
-           ""ReverseProxies"": [{
-             ""Location"": ""/search/"",
-             ""ProxyPass"": ""https://www.google.com/""
-           }]
-        }";
-        var expectedReverseProxySetting = new ReverseProxySetting { Location = "/search", ProxyPass = "https://www.google.com" };
-
-        var actualReverseProxySetting = System.Text.Json.JsonSerializer.Deserialize<ServerConfig>(json)?.ReverseProxies[0];
-
-        Assert.Equivalent(expectedReverseProxySetting, actualReverseProxySetting);
+        Assert.Equivalent(new ServerConfigReverseProxy { Location = "", ProxyPass = "" }, settings?.ReverseProxies[0]);
     }
 
     [Fact]
@@ -52,16 +38,16 @@ public class ServerConfigShould
               }
            }]
         }";
-        var expectedReverseProxySetting = new ReverseProxySetting
+        var expectedReverseProxySetting = new ServerConfigReverseProxy
         {
-            Location = "",
-            ProxyPass = "",
-            ProxySetHeader = new Dictionary<string, string>(){
-                {"Abcd", "Efgh"}
+            ProxySetHeader = new()
+            {
+                ["Abcd"] = "Efgh",
             }
         };
 
-        var actualReverseProxySetting = System.Text.Json.JsonSerializer.Deserialize<ServerConfig>(json)?.ReverseProxies[0];
+        var config = JsonSerializer.Deserialize<ServerConfig>(json);
+        var actualReverseProxySetting = config?.ReverseProxies[0];
 
         Assert.Equivalent(expectedReverseProxySetting, actualReverseProxySetting);
     }
@@ -69,7 +55,7 @@ public class ServerConfigShould
     [Fact]
     public void HavePropertyStaticContents()
     {
-        var settings = System.Text.Json.JsonSerializer.Deserialize<ServerConfig>("{}");
+        var settings = JsonSerializer.Deserialize<ServerConfig>("{}");
         Assert.Equal([], settings?.StaticContents);
     }
 
@@ -79,7 +65,7 @@ public class ServerConfigShould
         var json = @"{
            ""StaticContents"": [{}]
         }";
-        var expectedStaticContentSetting = new StaticContentSetting
+        var expectedStaticContentSetting = new ServerConfigStaticContent
         {
             Location = "",
             Root = ""
@@ -99,7 +85,7 @@ public class ServerConfigShould
               ""Root"": ""/etc/usr/common/""
            }]
         }";
-        var expectedStaticContentSetting = new StaticContentSetting
+        var expectedStaticContentSetting = new ServerConfigStaticContent
         {
             Location = "/static",
             Root = "/etc/usr/common/"

@@ -17,21 +17,21 @@ public class ReverseProxyMiddleware
     private const string DOMAIN = "domain";
     private const string D = "d";
 
-    //@TODO verify again
     private static readonly string[] _httpMethodsWithoutBody = [
         HTTP_METHOD_GET,
         HTTP_METHOD_HEAD,
         HTTP_METHOD_DELETE,
-        HTTP_METHOD_OPTIONS
+        HTTP_METHOD_OPTIONS,
+        HTTP_METHOD_TRACE
     ];
 
     //@TODO how to configure proxy and certificates
     private static readonly HttpClient _httpClient = new HttpClient();
 
-    private readonly ReverseProxySetting[] _mappings;
+    private readonly ReverseProxyMapping[] _mappings;
     private readonly RequestDelegate _next;
 
-    public ReverseProxyMiddleware(RequestDelegate next, IOptions<ReverseProxySetting[]> option)
+    public ReverseProxyMiddleware(RequestDelegate next, IOptions<ReverseProxyMapping[]> option)
     {
         _next = next;
         _mappings = option.Value;
@@ -39,6 +39,13 @@ public class ReverseProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Skip if the server has this endpoint (route) defined
+        if (context.GetEndpoint() != null)
+        {
+            await _next(context);
+            return;
+        }
+
         var mappingAndTargetUri = GetMappingAndTargetUri(context.Request);
 
         if (mappingAndTargetUri != null)
@@ -104,7 +111,7 @@ public class ReverseProxyMiddleware
 
     }
 
-    private (ReverseProxySetting mapping, Uri targetUri)? GetMappingAndTargetUri(HttpRequest request)
+    private (ReverseProxyMapping mapping, Uri targetUri)? GetMappingAndTargetUri(HttpRequest request)
     {
         foreach (var mapping in _mappings)
         {
@@ -119,7 +126,7 @@ public class ReverseProxyMiddleware
     private static void ApplyResponseHeaders(
         IHeaderDictionary headers,
         HttpResponseMessage targetResponse,
-        ReverseProxySetting setting
+        ReverseProxyMapping mapping
     )
     {
         /*
@@ -145,9 +152,9 @@ public class ReverseProxyMiddleware
             headers[header.Key] = header.Value.ToArray();
         }
 
-        if (setting.ProxySetHeader != null)
+        if (mapping.ProxySetHeader != null)
         {
-            foreach (var keyValuePair in setting.ProxySetHeader)
+            foreach (var keyValuePair in mapping.ProxySetHeader)
             {
                 if (string.IsNullOrEmpty(keyValuePair.Value))
                 {
@@ -164,7 +171,7 @@ public class ReverseProxyMiddleware
         if (headers.ContainsKey(HEADER_LOCATION))
         {
             headers.Location = headers.Location
-                .Select(location => location?.Replace(setting.ProxyPass, setting.Location))
+                .Select(location => location?.Replace(mapping.ProxyPass, mapping.Location))
                 .ToArray();
         }
 
@@ -184,8 +191,8 @@ public class ReverseProxyMiddleware
 public static class ReverseProxyMiddlewareExtensions
 {
     public static IApplicationBuilder UseReverseProxy(
-        this IApplicationBuilder builder, ReverseProxySetting[] mappings)
+        this IApplicationBuilder builder, ReverseProxyMapping[] config)
     {
-        return builder.UseMiddleware<ReverseProxyMiddleware>(Options.Create(mappings));
+        return builder.UseMiddleware<ReverseProxyMiddleware>(Options.Create(config));
     }
 }
